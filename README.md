@@ -30,3 +30,23 @@ https://english-easily.com
 
 ## Author
 Bohdan Olianitsky
+
+## Screenshots
+
+### Home Page
+![Home](screenshots/home.jpg)
+
+### Word Translator
+![Translator](screenshots/words.jpg)
+
+### Search System
+![Search](screenshots/search.jpg)
+
+### Grammar Section
+![Grammar](screenshots/grammar.jpg)
+
+### Training Mode
+![Trainer](screenshots/trainer_1.png)
+
+### Training Mode 2
+![Trainer](screenshots/trainer_2.png)
