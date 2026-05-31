@@ -1,0 +1,316 @@
+/*
+Interactive English vocabulary trainer.
+
+Features:
+- Progress saving
+- Smart repetition
+- Mistake review queue
+- Dynamic exercise generation
+- AJAX communication with Django backend
+*/
+<div class="card">
+
+<div class="side front active">
+    <!--  ЛІЧИЛЬНИК -->
+     <div id="progress" style="margin-bottom:10px; font-weight:bold;"></div>
+    <div class="word" id="mainWord"></div>
+    <div id="transcription" style="color:blue; font-size:26px;"></div>
+    <div id="translation" style="color:red; font-size:26px;"></div>
+    <div id="lines"></div>
+</div>
+
+<div class="side back">
+    <div class="word_2"><br>Дуже добре! <br><br> А тепер <br>введи по пам'яті<br></div>
+    <div class="word_2">агнлійською:</div>
+    <div style="color:blue; font-size:24px; margin-bottom:10px;" id="backTranscription"></div>
+    <div style="color:red; font-size:24px; margin-bottom:10px;" id="backTranslation"></div>
+    <input id="wordInput" class="big-input">
+
+    <div id="result" class="result-box" style="margin-bottom:15px;"></div>
+
+    <div class="buttons">
+        <button class="check-btn" onclick="checkFinal()">Перевірити</button>
+        <button id="nextBtn" style="display:none;" onclick="nextWord()">Наступне →</button>
+    </div>
+
+</div>
+
+</div>
+
+<a href="/" class="link-btn_home">НА ГОЛОВНУ</a>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+
+const set = params.get('set') || params.get('page') || 'zaymenn';
+
+const script = document.createElement('script');
+script.src = `/static/js/${set}.js`;
+
+script.onload = () => {
+  startTrainer();
+};
+
+document.head.appendChild(script);
+</script>
+
+<script>
+function startTrainer() {
+
+const params = new URLSearchParams(window.location.search);
+const set = params.get('set') || params.get('page') || 'zaymenn';
+
+let currentIndex = 0;
+
+// 🔐 CSRF
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let cookie of cookies) {
+            cookie = cookie.trim();
+            if (cookie.startsWith(name + '=')) {
+                cookieValue = cookie.substring(name.length + 1);
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// 📥 ЗАВАНТАЖЕННЯ ПРОГРЕСУ
+async function loadProgress() {
+  const res = await fetch(`/get-progress/?set=${set}`);
+  const data = await res.json();
+
+  currentIndex = data.current_index;
+  if (!currentIndex) currentIndex = 0;
+
+  if (currentIndex >= dictionary.length) {
+    currentIndex = 0;
+  }
+
+  updateWord();
+}
+
+// 📤 ЗБЕРЕЖЕННЯ
+async function saveProgress() {
+  await fetch("/save-progress/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": getCookie("csrftoken")
+    },
+    body: JSON.stringify({
+      set: set,
+      current_index: currentIndex
+    })
+  });
+}
+
+// ---------- ЛОГІКА ----------
+let stepCount = 0;
+let wrongQueue = [];
+let currentItem = null;
+
+function isRepeatStep() {
+  return stepCount > 0 && stepCount % 5 === 0 && currentIndex > 5;
+}
+
+function isWrongRepeatStep() {
+  return wrongQueue.length > 0 && stepCount % 3 === 0;
+}
+
+function getItem() {
+
+  if (isWrongRepeatStep()) {
+    return wrongQueue.shift();
+  }
+
+  if (isRepeatStep()) {
+    let start = Math.max(0, currentIndex - 20);
+    let randIndex = Math.floor(Math.random() * (currentIndex - start)) + start;
+    return dictionary[randIndex];
+  }
+
+  return dictionary[currentIndex];
+}
+
+// ---------- ЛІНІЇ ----------
+function generateLines() {
+  const container = document.getElementById('lines');
+  container.innerHTML = '';
+
+  const word = currentItem.en;
+  const length = word.length;
+
+  for (let k = 0; k < 3; k++) {
+
+    const line = document.createElement('div');
+    line.className = 'line';
+
+    for (let i = 0; i < length; i++) {
+
+      const show = Math.random() > (0.3 + k * 0.15);
+
+      if (show) {
+        line.appendChild(document.createTextNode(word[i]));
+      } else {
+
+        const inp = document.createElement('input');
+        inp.maxLength = 1;
+
+        inp.addEventListener('input', () => {
+
+          let val = inp.value.toLowerCase();
+          inp.value = val;
+
+          const all = [...document.querySelectorAll('.line input')];
+          const idx = all.indexOf(inp);
+
+          if (val === word[i]) {
+            inp.className = 'correct';
+
+            if (all[idx+1]) {
+              all[idx+1].focus();
+            }
+
+          } else {
+            inp.className = 'wrong';
+          }
+
+          if (checkAllCorrect()) {
+            setTimeout(() => {
+              document.querySelector('.front').classList.remove('active');
+              document.querySelector('.back').classList.add('active');
+
+              document.getElementById('backTranscription').innerText = currentItem.tr || '-';
+              document.getElementById('backTranslation').innerText = currentItem.ua;
+
+            }, 300);
+          }
+
+        });
+
+        line.appendChild(inp);
+      }
+    }
+
+    container.appendChild(line);
+  }
+}
+
+// ---------- ПЕРЕВІРКА ----------
+function checkAllCorrect() {
+  const inputs = document.querySelectorAll('.line input');
+  return [...inputs].every(inp => inp.value.length === 1 && inp.className === 'correct');
+}
+
+// ---------- ОНОВИТИ ----------
+function updateWord() {
+
+  currentItem = getItem();
+
+  document.getElementById('mainWord').innerText = currentItem.en;
+
+  let progressText = (currentIndex + 1) + ' / ' + dictionary.length;
+
+  if (isRepeatStep()) {
+    progressText += " 🔁";
+  }
+
+  document.getElementById('progress').innerText = progressText;
+
+  document.getElementById('transcription').innerText = currentItem.tr || '-';
+  document.getElementById('translation').innerText = currentItem.ua;
+
+  document.getElementById('backTranscription').innerText = currentItem.tr || '-';
+  document.getElementById('backTranslation').innerText = currentItem.ua;
+
+  document.getElementById('wordInput').value = '';
+
+  const result = document.getElementById('result');
+  result.innerHTML = '';
+  result.style.display = 'none';
+
+  document.getElementById('nextBtn').style.display = 'none';
+
+  document.querySelector('.back').classList.remove('active');
+  document.querySelector('.front').classList.add('active');
+
+  generateLines();
+}
+
+// ---------- ДАЛІ ----------
+async function nextWord() {
+
+  stepCount++;
+
+  if (!isRepeatStep() && !isWrongRepeatStep()) {
+    currentIndex++;
+  }
+
+  await saveProgress();
+
+  if (currentIndex >= dictionary.length) {
+    showFinish();
+    return;
+  }
+
+  updateWord();
+}
+
+// ---------- ПЕРЕВІРКА ----------
+function checkFinal() {
+
+  const w = document.getElementById('wordInput');
+  const result = document.getElementById('result');
+
+  const okWord = w.value.trim().toLowerCase() === currentItem.en.toLowerCase();
+
+  result.style.display = "block";
+
+  if (okWord) {
+    result.innerHTML = "МОЛОДЕЦЬ! ВІРНО!";
+    result.style.color = "MediumVioletRed";
+    document.getElementById('nextBtn').style.display = "inline-block";
+  } else {
+    result.innerHTML = "НЕВІРНО!";
+    result.style.color = "red";
+
+    wrongQueue.push(currentItem);
+
+    document.getElementById('nextBtn').style.display = "none";
+  }
+}
+
+// ---------- ФІНІШ ----------
+function showFinish() {
+
+  document.querySelector('.front').style.display = 'none';
+  document.querySelector('.back').style.display = 'none';
+
+  const card = document.querySelector('.card');
+
+  card.innerHTML = `
+  <div style="text-align:center; padding:30px;">
+    <div style="font-size:28px; font-weight:bold; color: blue;">
+      ВІТАЮ!
+      <br><br>СТОРІНКУ ПРОЙДЕНО!
+      <br><br>ТИ МОЛОДЕЦЬ! 💪
+    </div>
+  </div>
+`;
+}
+
+// ---------- СТАРТ ----------
+setTimeout(() => {
+  loadProgress();
+}, 100);
+
+
+window.nextWord = nextWord;
+window.checkFinal = checkFinal;
+}
+
+</script>
